@@ -2,13 +2,17 @@
 #include <errno.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <string.h>
 
 #include <stdlib.h>
 #include <stdio.h>
 
 #include <unistd.h>
 
+void processRequest (int sock);
+
 void ext_out(unsigned port, int tun0) {
+    int pid;
     int sock = socket(AF_INET6, SOCK_STREAM, 0);
     if(sock < 0) {
         perror("socket()");
@@ -39,32 +43,50 @@ void ext_out(unsigned port, int tun0) {
 
     struct sockaddr_in csin = { 0 };
     socklen_t sinsize = sizeof(struct sockaddr_in);
-    int csock = accept(sock, (struct sockaddr *) &csin, &sinsize);
 
-    if(csock < 0) {
-        perror("accept()");
-        exit(errno);
-    }
-
-    printf("User accepted !\n");
-
-    char buff[256];
+    // char buff[256];
     while (1) {
-        ssize_t lu = recv(csock, &buff, 255, 0);
-        if (lu > 0) {
-            buff[lu] = '\0';
-            printf("read (%d) : %s\n", (int) lu, buff);
-            write(tun0, &buff, (size_t) (lu + 1));
-        } else if (lu < 0) {
-            perror("recv()");
+        int csock = accept(sock, (struct sockaddr *) &csin, &sinsize);
+
+        if(csock < 0) {
+            perror("accept()");
             exit(errno);
         }
+
+        printf("User accepted !\n");
+
+        pid = fork();
+
+        if (pid < 0) {
+            perror("ERROR on fork");
+            exit(1);
+        }
+
+        if (pid == 0) {
+            /* This is the client process */
+            close(sock);
+            processRequest(csock);
+            exit(0);
+        }
+        else {
+            close(csock);
+        }
+
+//        ssize_t lu = recv(csock, &buff, 255, 0);
+//        if (lu > 0) {
+//            buff[lu] = '\0';
+//            printf("read (%d) : %s\n", (int) lu, buff);
+//            write(tun0, &buff, (size_t) (lu + 1));
+//        } else if (lu < 0) {
+//            perror("recv()");
+//            exit(errno);
+//        }
     }
 
     printf("\n");
 
-    close(csock);
-    close(sock);
+    //close(csock);
+    //close(sock);
 }
 
 void ext_in(unsigned port, char *address, int tun0) {
@@ -102,4 +124,24 @@ void ext_in(unsigned port, char *address, int tun0) {
 
     close(sock);
 
+}
+
+void processRequest (int sock) {
+    int n;
+    char buffer[256];
+    bzero(buffer,256);
+    n = read(sock,buffer,255);
+
+    if (n < 0) {
+        perror("ERROR reading from socket");
+        exit(1);
+    }
+
+    printf("Here is the message: %s\n",buffer);
+    n = write(sock,"I got your message",18);
+
+    if (n < 0) {
+        perror("ERROR writing to socket");
+        exit(1);
+    }
 }
